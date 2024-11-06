@@ -1,60 +1,96 @@
 import re, requests
 import itertools
 
-# Wzorce regex dla różnych elementów artykułu
-PATTERN_ARTICLE = r'<li[^>]*>.*<a[^>]*href=\"(/wiki/(?![^"]*:)[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>.*</li>'
-PATTERN_CATEGORY = r'<a[^>]*href=\"(/wiki/Kategoria:[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>'
-PATTERN_IMAGE = r'<img[^>]*src=\"(//upload\.wikimedia\.org/[^"]+)\"[^>]*/>'
-PATTERN_EXTERNAL_LINK = r'<a[^>]*class=\"external[^"]*\"[^>]*href=\"([^"]+)\"[^>]*>'
-PATTERN_INTERNAL_LINK = r'<a[^>]*href=\"(/wiki/(?![^"]*:)[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>'
+# Pobieranie zawartości artykułu
+def pobierz_zawartosc(html):
+    return html[html.find('<div id="mw-content-text"'):html.find('<div id="catlinks"')]
 
+# Pobieranie przypisów
+def pobierz_przypisy_html(html):
+    html = html[html.find('id="Przypisy"'):]
+    html = html[:html.find('<div class="mw-heading')]
+    return html
 
-# Funkcja wyszukująca wzorce
-def find_patterns(pattern, text, limit=5, flag=0):
-    return [match.groups() for match in itertools.islice(re.finditer(pattern, text, flags=flag), limit)]
+# Pobieranie kategorii
+def pobierz_kategorie_html(html):
+    return html[html.find('<div id="catlinks"'):]
 
+# Znajdowanie dopasowań wyrażeń regularnych
+def znajdz_wzorce(wzorzec, tekst, flaga=0, maks=5):
+    return [dopasowanie.groups() for dopasowanie in itertools.islice(re.finditer(wzorzec, tekst, flags=flaga), maks)]
 
-# Pobiera listę artykułów z kategorii, konstruując URL kategorii
-def fetch_articles_from_category(category_name, limit=3):
-    category_url = 'https://pl.wikipedia.org/wiki/Kategoria:' + category_name.replace(' ', '_')
-    html_content = requests.get(category_url).text
-    return find_patterns(PATTERN_ARTICLE, html_content, limit)
+# Generowanie URL kategorii
+def generuj_url_kategorii(nazwa_kategorii):
+    nazwa_dopasowana = nazwa_kategorii.replace(' ', '_')
+    return f'https://pl.wikipedia.org/wiki/Kategoria:{nazwa_dopasowana}'
 
+# Pobieranie listy artykułów z kategorii
+def pobierz_artykuly_z_kategorii(nazwa_kategorii, maks=3):
+    url_kategorii = generuj_url_kategorii(nazwa_kategorii)
+    odp = requests.get(url_kategorii)
+    html = odp.text
+    artykuly = znajdz_wzorce(WZORZEC_ARTYKUL, html, maks=maks)
+    return artykuly
 
-# Wyświetla listę elementów jako wynik
-def display_results(elements):
-    print(" | ".join(elements) if elements else "")
+# Pobranie zawartości artykułu
+def pobierz_zawartosc_artykulu(link):
+    odp = requests.get("https://pl.wikipedia.org" + link)
+    html = odp.text
+    return html
 
+# Pobieranie obrazków z artykułu
+def pobierz_obrazki(artykul, maks=3):
+    html = pobierz_zawartosc(artykul)
+    obrazki = znajdz_wzorce(WZORZEC_OBRAZEK, html, maks=maks)
+    return obrazki
 
-# Funkcja główna, która pobiera i wyświetla dane z artykułów
+# Pobieranie linków wewnętrznych
+def pobierz_linki_wewnetrzne(artykul, maks=5):
+    html = pobierz_zawartosc(artykul)
+    linki_wewn = znajdz_wzorce(WZORZEC_LINK_WEWN, html, maks=maks)
+    return linki_wewn
+
+# Pobieranie linków zewnętrznych
+def pobierz_linki_zewnetrzne(artykul, maks=3):
+    html = pobierz_przypisy_html(artykul)
+    linki_zewn = znajdz_wzorce(WZORZEC_LINK_ZEW, html, maks=maks)
+    return linki_zewn
+
+# Pobieranie kategorii dla artykułu
+def pobierz_kategorie(artykul, maks=3):
+    html = pobierz_kategorie_html(artykul)
+    kategorie = znajdz_wzorce(WZORZEC_KATEGORIA, html, maks=maks)
+    return kategorie
+
+# Wyświetlanie wyników
+def wyswietl_wynik(lista_elementow):
+    wynik = ' | '.join(lista_elementow).strip()
+    print(wynik)
+
+# Wzorce wyrażeń regularnych
+WZORZEC_ARTYKUL = r'<li[^>]*>.*<a[^>]*href=\"(/wiki/(?![^"]*:)[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>.*</li>'
+WZORZEC_KATEGORIA = r'<a[^>]*href=\"(/wiki/Kategoria:[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>'
+WZORZEC_OBRAZEK = r'<img[^>]*src=\"(//upload\.wikimedia\.org/[^"]+)\"[^>]*/>'
+WZORZEC_LINK_ZEW = r'<a[^>]*class=\"external[^"]*\"[^>]*href=\"([^"]+)\"[^>]*>'
+WZORZEC_LINK_WEWN = r'<a[^>]*href=\"(/wiki/(?![^"]*:)[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>'
+
+# Główna funkcja
 def main():
-    category = input("Podaj kategorię: ").strip()
-    articles = fetch_articles_from_category(category)
+    kat = input("Podaj kategorię: ").strip()
+    artykuly = pobierz_artykuly_z_kategorii(kat)
 
-    for link, title in articles:
-        article_html = requests.get("https://pl.wikipedia.org" + link).text
-        main_content = article_html[
-                       article_html.find('<div id="mw-content-text"'):article_html.find('<div id="catlinks"')]
+    for link_art, tytul_art in artykuly:
+        tresc = pobierz_zawartosc_artykulu(link_art)
 
-        # Zbiera linki wewnętrzne
-        internal_links = find_patterns(PATTERN_INTERNAL_LINK, main_content, 5)
-        display_results([name for _, name in internal_links])
-
-        # Zbiera obrazki
-        images = find_patterns(PATTERN_IMAGE, main_content, 3)
-        display_results([url for url, in images])
-
-        # Zbiera linki zewnętrzne z sekcji przypisów
-        references_section = article_html[article_html.find('id="Przypisy"'):]
-        references_section = references_section[:references_section.find('<div class="mw-heading')]
-        external_links = find_patterns(PATTERN_EXTERNAL_LINK, references_section, 3)
-        display_results([url for url, in external_links])
-
-        # Kategorie
-        category_section = article_html[article_html.find('<div id="catlinks"'):]
-        categories = find_patterns(PATTERN_CATEGORY, category_section, 3)
-        display_results([category_name for _, category_name in categories])
-
+        # Pobieranie i wyświetlanie wyników
+        linki_wewn = pobierz_linki_wewnetrzne(tresc)
+        wyswietl_wynik([elem[1] for elem in linki_wewn])
+        obrazki = pobierz_obrazki(tresc)
+        wyswietl_wynik([elem[0] for elem in obrazki])
+        linki_zewn = pobierz_linki_zewnetrzne(tresc)
+        wyswietl_wynik([elem[0] for elem in linki_zewn])
+        kategorie = pobierz_kategorie(tresc)
+        wyswietl_wynik([elem[1].removeprefix('Kategoria:') for elem in kategorie])
 
 if __name__ == '__main__':
     main()
