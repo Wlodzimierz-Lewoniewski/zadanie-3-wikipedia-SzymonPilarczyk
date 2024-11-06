@@ -1,50 +1,60 @@
-import re, requests, itertools
+import re, requests
+import itertools
 
 # Wzorce regex dla różnych elementów artykułu
-PAT_ART = r'<li[^>]*>.*<a[^>]*href=\"(/wiki/(?![^"]*:)[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>.*</li>'
-PAT_KAT = r'<a[^>]*href=\"(/wiki/Kategoria:[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>'
-PAT_IMG = r'<img[^>]*src=\"(//upload\.wikimedia\.org/[^"]+)\"[^>]*/>'
-PAT_EXT_LINK = r'<a[^>]*class=\"external[^"]*\"[^>]*href=\"([^"]+)\"[^>]*>'
-PAT_WW_LINK = r'<a[^>]*href=\"(/wiki/(?![^"]*:)[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>'
+PATTERN_ARTICLE = r'<li[^>]*>.*<a[^>]*href=\"(/wiki/(?![^"]*:)[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>.*</li>'
+PATTERN_CATEGORY = r'<a[^>]*href=\"(/wiki/Kategoria:[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>'
+PATTERN_IMAGE = r'<img[^>]*src=\"(//upload\.wikimedia\.org/[^"]+)\"[^>]*/>'
+PATTERN_EXTERNAL_LINK = r'<a[^>]*class=\"external[^"]*\"[^>]*href=\"([^"]+)\"[^>]*>'
+PATTERN_INTERNAL_LINK = r'<a[^>]*href=\"(/wiki/(?![^"]*:)[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>'
+
 
 # Funkcja wyszukująca wzorce
-def szukaj(wzor, tekst, limit=5, f=0): return [m.groups() for m in itertools.islice(re.finditer(wzor, tekst, flags=f), limit)]
+def find_patterns(pattern, text, limit=5, flag=0):
+    return [match.groups() for match in itertools.islice(re.finditer(pattern, text, flags=flag), limit)]
+
 
 # Pobiera listę artykułów z kategorii, konstruując URL kategorii
-def pobierz_art_z_kat(nazwa, lim=3):
-    url = 'https://pl.wikipedia.org/wiki/Kategoria:' + nazwa.replace(' ', '_')
-    html = requests.get(url).text
-    return szukaj(PAT_ART, html, lim)
+def fetch_articles_from_category(category_name, limit=3):
+    category_url = 'https://pl.wikipedia.org/wiki/Kategoria:' + category_name.replace(' ', '_')
+    html_content = requests.get(category_url).text
+    return find_patterns(PATTERN_ARTICLE, html_content, limit)
+
 
 # Wyświetla listę elementów jako wynik
-def wynik(lista): print(" | ".join(lista) if lista else "")
+def display_results(elements):
+    print(" | ".join(elements) if elements else "")
+
 
 # Funkcja główna, która pobiera i wyświetla dane z artykułów
-def glowna():
-    kat = input("Podaj kategorię: ").strip()
-    artykuly = pobierz_art_z_kat(kat)
-    
-    for link, tytul in artykuly:
-        html = requests.get("https://pl.wikipedia.org" + link).text
-        tresc_html = html[html.find('<div id="mw-content-text"'):html.find('<div id="catlinks"')]
-        
+def main():
+    category = input("Podaj kategorię: ").strip()
+    articles = fetch_articles_from_category(category)
+
+    for link, title in articles:
+        article_html = requests.get("https://pl.wikipedia.org" + link).text
+        main_content = article_html[
+                       article_html.find('<div id="mw-content-text"'):article_html.find('<div id="catlinks"')]
+
         # Zbiera linki wewnętrzne
-        wew_linki = szukaj(PAT_WW_LINK, tresc_html, 5)
-        wynik([nazwa for _, nazwa in wew_linki])
+        internal_links = find_patterns(PATTERN_INTERNAL_LINK, main_content, 5)
+        display_results([name for _, name in internal_links])
 
         # Zbiera obrazki
-        obrazki = szukaj(PAT_IMG, tresc_html, 3)
-        wynik([url for url, in obrazki])
+        images = find_patterns(PATTERN_IMAGE, main_content, 3)
+        display_results([url for url, in images])
 
         # Zbiera linki zewnętrzne z sekcji przypisów
-        przypisy_html = html[html.find('id="Przypisy"'):]
-        przypisy_html = przypisy_html[:przypisy_html.find('<div class="mw-heading')]
-        zew_linki = szukaj(PAT_EXT_LINK, przypisy_html, 3)
-        wynik([url for url, in zew_linki])
+        references_section = article_html[article_html.find('id="Przypisy"'):]
+        references_section = references_section[:references_section.find('<div class="mw-heading')]
+        external_links = find_patterns(PATTERN_EXTERNAL_LINK, references_section, 3)
+        display_results([url for url, in external_links])
 
         # Kategorie
-        kat_html = html[html.find('<div id="catlinks"'):]
-        kategorie = szukaj(PAT_KAT, kat_html, 3)
-        wynik([kat for _, kat in kategorie])
+        category_section = article_html[article_html.find('<div id="catlinks"'):]
+        categories = find_patterns(PATTERN_CATEGORY, category_section, 3)
+        display_results([category_name for _, category_name in categories])
 
-if __name__ == '__main__': glowna()
+
+if __name__ == '__main__':
+    main()
