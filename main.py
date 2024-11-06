@@ -1,60 +1,50 @@
-import re
-import urllib.request
-import urllib.parse
+import re, requests, itertools
 
-# Wzorce wyrażeń regularnych
-wzorzec_odn_artykul = r'<li[^>]*>.*<a[^>]*href=\"(/wiki/(?![^"]*:)[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>.*</li>'
-wzorzec_odn_kategoria = r'<a[^>]*href=\"(/wiki/Kategoria:[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>'
-wzorzec_odn_obrazek = r'<img[^>]*src=\"(//upload\.wikimedia\.org/[^"]+)\"[^>]*/>'
-wzorzec_odn_zewnetrzny = r'<a[^>]*class=\"external[^"]*\"[^>]*href=\"([^"]+)\"[^>]*>'
-wzorzec_odn_wewn = r'<a[^>]*href=\"(/wiki/(?![^"]*:)[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>'
+# Wzorce regex dla różnych elementów artykułu
+PAT_ART = r'<li[^>]*>.*<a[^>]*href=\"(/wiki/(?![^"]*:)[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>.*</li>'
+PAT_KAT = r'<a[^>]*href=\"(/wiki/Kategoria:[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>'
+PAT_IMG = r'<img[^>]*src=\"(//upload\.wikimedia\.org/[^"]+)\"[^>]*/>'
+PAT_EXT_LINK = r'<a[^>]*class=\"external[^"]*\"[^>]*href=\"([^"]+)\"[^>]*>'
+PAT_WW_LINK = r'<a[^>]*href=\"(/wiki/(?![^"]*:)[^"]+)\"[^>]*title=\"([^"]+)\"[^>]*>'
 
-# Funkcja do znajdowania wzorców w HTML
-def znajdz_wzorce(wzorzec, tekst, maks=5):
-    return re.findall(wzorzec, tekst)[:maks]
+# Funkcja wyszukująca wzorce
+def szukaj(wzor, tekst, limit=5, f=0): return [m.groups() for m in itertools.islice(re.finditer(wzor, tekst, flags=f), limit)]
 
-# Zamiana spacji na "_"
-def generuj_url_kat(kategoria_nazwa):
-    return f'https://pl.wikipedia.org/wiki/Kategoria:{kategoria_nazwa.replace(" ", "_")}'
+# Pobiera listę artykułów z kategorii, konstruując URL kategorii
+def pobierz_art_z_kat(nazwa, lim=3):
+    url = 'https://pl.wikipedia.org/wiki/Kategoria:' + nazwa.replace(' ', '_')
+    html = requests.get(url).text
+    return szukaj(PAT_ART, html, lim)
 
-# Główna część programu
-kat = input().strip()  # Wprowadź nazwę kategorii
-url = generuj_url_kat(kat)
+# Wyświetla listę elementów jako wynik
+def wynik(lista): print(" | ".join(lista) if lista else "")
 
-# Pobieranie artykułów z kategorii
-with urllib.request.urlopen(url) as fp:
-    html = fp.read().decode("utf-8")
+# Funkcja główna, która pobiera i wyświetla dane z artykułów
+def glowna():
+    kat = input("Podaj kategorię: ").strip()
+    artykuly = pobierz_art_z_kat(kat)
+    
+    for link, tytul in artykuly:
+        html = requests.get("https://pl.wikipedia.org" + link).text
+        tresc_html = html[html.find('<div id="mw-content-text"'):html.find('<div id="catlinks"')]
+        
+        # Zbiera linki wewnętrzne
+        wew_linki = szukaj(PAT_WW_LINK, tresc_html, 5)
+        wynik([nazwa for _, nazwa in wew_linki])
 
-artykuly = znajdz_wzorce(wzorzec_odn_artykul, html, maks=3)  # Pobieramy 3 artykuły
+        # Zbiera obrazki
+        obrazki = szukaj(PAT_IMG, tresc_html, 3)
+        wynik([url for url, in obrazki])
 
-# Przetwarzanie każdego artykułu
-for link_art, tytul_art in artykuly:
-    # Pobieranie zawartości artykułu
-    with urllib.request.urlopen("https://pl.wikipedia.org" + link_art) as fp:
-        tresc = fp.read().decode("utf-8")
+        # Zbiera linki zewnętrzne z sekcji przypisów
+        przypisy_html = html[html.find('id="Przypisy"'):]
+        przypisy_html = przypisy_html[:przypisy_html.find('<div class="mw-heading')]
+        zew_linki = szukaj(PAT_EXT_LINK, przypisy_html, 3)
+        wynik([url for url, in zew_linki])
 
-    # Linki wewnętrzne
-    linki_wewn = znajdz_wzorce(wzorzec_odn_wewn, tresc, maks=5)
-    print("Linki wewnętrzne:")
-    print(' | '.join([link[1] for link in linki_wewn]))
+        # Kategorie
+        kat_html = html[html.find('<div id="catlinks"'):]
+        kategorie = szukaj(PAT_KAT, kat_html, 3)
+        wynik([kat for _, kat in kategorie])
 
-    # Obrazki
-    obrazki = znajdz_wzorce(wzorzec_odn_obrazek, tresc, maks=3)
-    print("Obrazki:")
-    print(' | '.join([obrazek[0] for obrazek in obrazki]))
-
-    # Linki zewnętrzne (przypisy)
-    with urllib.request.urlopen("https://pl.wikipedia.org" + link_art) as fp:
-        przypisy_html = fp.read().decode("utf-8")
-    zewnetrzne_linki = znajdz_wzorce(wzorzec_odn_zewnetrzny, przypisy_html, maks=3)
-    print("Linki zewnętrzne:")
-    print(' | '.join([link for link in zewnetrzne_linki]))
-
-    # Kategorie
-    with urllib.request.urlopen("https://pl.wikipedia.org" + link_art) as fp:
-        kategorie_html = fp.read().decode("utf-8")
-    kategorie = znajdz_wzorce(wzorzec_odn_kategoria, kategorie_html, maks=3)
-    print("Kategorie:")
-    print(' | '.join([kategoria[1].removeprefix('Kategoria:') for kategoria in kategorie]))
-
-    print("-" * 50)  # Separator między artykułami
+if __name__ == '__main__': glowna()
