@@ -2,87 +2,52 @@ import urllib.request
 import re
 import urllib.parse
 
+def pobierz_zawartosc_strony(url):
+    """Pobiera zawartość strony podanej w URL i dekoduje do formatu tekstowego."""
+    with urllib.request.urlopen(url) as fp:
+        zawartosc = fp.read().decode("utf-8")
+    return zawartosc
 
-# Funkcja do pobierania HTML strony
-def pobierz_html(url):
-    fp = urllib.request.urlopen(url)
-    tbytes = fp.read()
-    html = tbytes.decode("utf-8")
-    fp.close()
-    return html
+def znajdz_elementy(wzor, tekst, limit=2):
+    """Znajduje elementy pasujące do wzorca, zwraca ograniczoną liczbę wyników."""
+    elementy = re.findall(wzor, tekst)
+    return elementy[:limit]
 
-
-# Funkcja do wyciągania linków wewnętrznych
-def wyciagnij_linki_wewnetrzne(html):
+def pobierz_linki_wewnetrzne(html, limit=5):
+    """Pobiera linki wewnętrzne z tekstu HTML, pomija linki zawierające dwukropek."""
     linki_wewn = []
-    for link, tekst in re.findall(r'<a href="/wiki/([^":]+)"[^>]*>([^<]+)</a>', html):
-        linki_wewn.append((urllib.parse.unquote(link), tekst))
-        if len(linki_wewn) >= 5:
+    for link in re.findall(r'<a href="/wiki/([^":]+)"', html):
+        linki_wewn.append(urllib.parse.unquote(link).replace(' ', '_'))
+        if len(linki_wewn) >= limit:
             break
     return linki_wewn
 
-
-# Funkcja do wyciągania URLi obrazków
-def wyciagnij_obrazki(html):
-    obrazki = re.findall(r'//upload\.wikimedia\.org[^"]+\.(jpg|png|svg)', html)
-    return obrazki[:3]
-
-
-# Funkcja do wyciągania zewnętrznych linków źródłowych
-def wyciagnij_zewnetrzne_linki(html):
-    zewnetrzne_linki = re.findall(r'<a href="(https?://[^"]+)"', html)
-    return zewnetrzne_linki[:3]
-
-
-# Funkcja do wyciągania kategorii
-def wyciagnij_kategorie(html):
-    kategorie = re.findall(r'<a href="/wiki/Kategoria:([^"]+)"', html)
-    return kategorie[:3]
-
-
-# Główna funkcja programu
 def main():
-    # Użytkownik podaje nazwę kategorii
+    # Wybór kategorii i formatowanie URL
     kat = "Miasta na prawach powiatu"
     url = "https://pl.wikipedia.org/wiki/Kategoria:" + kat.replace(' ', '_')
+    
+    # Pobieranie zawartości strony kategorii
+    tekst_html = pobierz_zawartosc_strony(url)
+    
+    # Szukanie artykułów z listy w kategorii
+    wzor_artykul = r'<li>.*?</li>'
+    artykuly = znajdz_elementy(wzor_artykul, tekst_html)
+    
+    if artykuly:
+        # Pobranie pierwszego artykułu do dalszej analizy
+        artykul_html = artykuly[0]
+        print("Artykuł HTML:", artykul_html)
+        
+        # Podzielenie zawartości, by znaleźć treść
+        sekcja_html = tekst_html.split('class="mw-body-content"')
+        
+        if len(sekcja_html) > 1:
+            tresc_artykulu = sekcja_html[1]
+            
+            # Pobranie linków wewnętrznych z treści artykułu
+            linki_wewnetrzne = pobierz_linki_wewnetrzne(tresc_artykulu)
+            print("Linki wewnętrzne:", linki_wewnetrzne)
 
-    # Pobranie i przetworzenie HTML strony kategorii
-    html_kategorii = pobierz_html(url)
-    artykuly = re.findall(r'<li><a href="/wiki/([^"]+)" title="[^"]+">[^<]+</a>', html_kategorii)
-
-    # Pobranie pierwszych dwóch artykułów z listy
-    pierwsze_dwa_artykuly = artykuly[:2]
-
-    for art in pierwsze_dwa_artykuly:
-        art_url = "https://pl.wikipedia.org/wiki/" + art
-        html_artykulu = pobierz_html(art_url)
-
-        # Wyciąganie elementów z artykułu
-        linki_wewnetrzne = wyciagnij_linki_wewnetrzne(html_artykulu)
-        obrazki = wyciagnij_obrazki(html_artykulu)
-        zewnetrzne_linki = wyciagnij_zewnetrzne_linki(html_artykulu)
-        kategorie = wyciagnij_kategorie(html_artykulu)
-
-        # Wyświetlanie wyników
-        print(f"Artykuł: {art}")
-        print("Linki wewnętrzne (nazwa i URL):")
-        for link, tekst in linki_wewnetrzne:
-            print(f"{tekst} | https://pl.wikipedia.org/wiki/{link}")
-
-        print("\nObrazki:")
-        for obrazek in obrazki:
-            print(f"https:{obrazek}")
-
-        print("\nZewnętrzne linki:")
-        for zew_link in zewnetrzne_linki:
-            print(zew_link)
-
-        print("\nKategorie:")
-        for kat in kategorie:
-            print(kat)
-
-        print("\n" + "=" * 40 + "\n")
-
-
-# Uruchomienie programu
-main()
+if __name__ == "__main__":
+    main()
