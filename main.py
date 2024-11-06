@@ -1,53 +1,61 @@
 import urllib.request
-import re
 import urllib.parse
+import re
 
-def pobierz_zawartosc_strony(url):
-    """Pobiera zawartość strony podanej w URL i dekoduje do formatu tekstowego."""
-    with urllib.request.urlopen(url) as fp:
-        zawartosc = fp.read().decode("utf-8")
-    return zawartosc
 
-def znajdz_elementy(wzor, tekst, limit=2):
-    """Znajduje elementy pasujące do wzorca, zwraca ograniczoną liczbę wyników."""
-    elementy = re.findall(wzor, tekst)
-    return elementy[:limit]
+# Funkcja do pobierania zawartości strony z kategorii
+def pobierz_zawartosc_kategorii(kategoria):
+    url = "https://pl.wikipedia.org/wiki/Kategoria:" + kategoria.replace(' ', '_')
+    fp = urllib.request.urlopen(url)
+    tbytes = fp.read()
+    txt = tbytes.decode("utf-8")
+    fp.close()
+    return txt
 
-def pobierz_linki_wewnetrzne(html, limit=5):
-    """Pobiera linki wewnętrzne z tekstu HTML, pomija linki zawierające dwukropek."""
+
+# Funkcja do zbierania linków wewnętrznych z artykułów
+def pobierz_linki_wewnetrzne_z_artykulu(tresc_artykulu, maks=5):
     linki_wewn = []
-    for link in re.findall(r'<a href="/wiki/([^":]+)"', html):
+    for link in re.findall('<a href="/wiki/([^"]+)"', tresc_artykulu):
+        if ":" in link: continue  # Pomija linki do kategorii i innych specjalnych stron
         linki_wewn.append(urllib.parse.unquote(link).replace(' ', '_'))
-        if len(linki_wewn) >= limit:
+        if len(linki_wewn) >= maks:  # Maksymalna liczba linków
             break
     return linki_wewn
 
-def main():
-    # Wybór kategorii i formatowanie URL
-    kat = "Miasta na prawach powiatu"
-    url = "https://pl.wikipedia.org/wiki/Kategoria:" + kat.replace(' ', '_')
-    
-    # Pobieranie zawartości strony kategorii
-    tekst_html = pobierz_zawartosc_strony(url)
-    
-    # Szukanie artykułów z listy w kategorii
-    wzor_artykul = r'<li>.*?</li>'
-    artykuly = znajdz_elementy(wzor_artykul, tekst_html)
-    
-    if artykuly:
-        # Pobranie pierwszego artykułu do dalszej analizy
-        artykul_html = artykuly[0]
-        print("Artykuł HTML:", artykul_html)
-        
-        # Podzielenie zawartości, by znaleźć treść
-        sekcja_html = tekst_html.split('class="mw-body-content"')
-        
-        if len(sekcja_html) > 1:
-            tresc_artykulu = sekcja_html[1]
-            
-            # Pobranie linków wewnętrznych z treści artykułu
-            linki_wewnetrzne = pobierz_linki_wewnetrzne(tresc_artykulu)
-            print("Linki wewnętrzne:", linki_wewnetrzne)
 
-if __name__ == "__main__":
+# Funkcja do pobierania artykułu na podstawie linku
+def pobierz_artykul(link):
+    url_artykulu = "https://pl.wikipedia.org/wiki/" + link
+    fp = urllib.request.urlopen(url_artykulu)
+    tbytes = fp.read()
+    txt = tbytes.decode("utf-8")
+    fp.close()
+    return txt
+
+
+# Główna funkcja - pobieranie artykułów z kategorii i wyciąganie linków
+def main():
+    kat = "Miasta na prawach powiatu"  # Przykładowa kategoria
+    txt = pobierz_zawartosc_kategorii(kat)
+
+    # Wyciąganie linków do artykułów z kategorii
+    wzor = r'<li>.*?<a href="/wiki/([^"]+)"[^>]*>([^<]+)</a>.*?</li>'
+    wynik = re.findall(wzor, txt)
+
+    # Zbieramy tylko 2 pierwsze artykuły z kategorii
+    artykuly = wynik[:2]
+
+    for link_art, tytul_art in artykuly:
+        print(f"Przetwarzam artykuł: {tytul_art}")
+
+        # Pobieramy zawartość artykułu
+        tresc_artykulu = pobierz_artykul(link_art)
+
+        # Wyciąganie linków wewnętrznych
+        linki_wewn = pobierz_linki_wewnetrzne_z_artykulu(tresc_artykulu)
+        print("Linki wewnętrzne:", linki_wewn)
+
+
+if __name__ == '__main__':
     main()
